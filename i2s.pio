@@ -1,0 +1,43 @@
+// 16 bit stereo i2s
+
+; Repeatedly get one word of data from the TX FIFO, stalling when the FIFO is
+; empty. Write the least significant bit to the OUT pin group.
+
+
+.program i2s_16s
+.side_set 2
+
+public entry_point:
+    out null, 16        side 0b01
+    out pins,  1        side 0b00
+    set    x, 13        side 0b01
+
+i2s_16s_l:
+    out pins, 1         side 0b00
+    jmp x--, i2s_16s_l side 0b01
+    out pins, 1         side 0b10
+    out null, 16        side 0b11
+    out pins, 1         side 0b10
+    set    x, 13        side 0b11
+
+i2s_16s_r:
+    out pins, 1         side 0b10
+    jmp x--, i2s_16s_r  side 0b11
+    out pins, 1         side 0b00   
+
+
+;; side bit ws
+
+; public entry_point:
+   ; set x, 14         side 0b11
+
+; bitloop1:          
+;    out pins, 1       side 0b10
+;    jmp x-- bitloop1  side 0b11
+;    out pins, 1       side 0b00 ; switch to R channel
+;    set x, 14         side 0b01
+
+;bitloop0:
+;    out pins, 1       side 0b00
+;    jmp x-- bitloop0  side 0b01
+;    out pins, 1       side 0b10
