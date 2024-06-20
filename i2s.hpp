@@ -113,7 +113,9 @@ namespace pico {
             }
 
             inline void put(const int16_t L, const int16_t R) {
-                fifo.put(uint32_t(L) << 16 | uint32_t(R));                
+                critical_section_enter_blocking(&cs);    
+                fifo.put(uint32_t(L) << 16 | uint32_t(R));        
+                critical_section_exit(&cs);        
             }
 
             void irq_callback();
