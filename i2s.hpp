@@ -5,6 +5,7 @@
 
 #include "pico/critical_section.h"
 #include "pico/stdlib.h"
+#include "pico/sync.h"
 #include "hardware/pio.h"
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
@@ -30,7 +31,7 @@ namespace pico {
                 int pin_bclk, pin_din, pin_dout;
             };
 
-            static constexpr auto Audio_Vector_Count = 2; // stereo
+            static constexpr auto Audio_Vector_Count = 4; // stereo
             static constexpr auto Audio_Vector_Length = 64;
             static constexpr auto sample_rate = 44100;
 
@@ -64,6 +65,7 @@ namespace pico {
             
             Stream_Mode stream_mode;
             critical_section cs;
+            mutex_t mutex;
 
             PIO pio = pio0;
             uint irq_index = DMA_IRQ_0;
@@ -82,6 +84,16 @@ namespace pico {
             bool ready_to_transfer = true;
 
             void transfer_next_buffer();
+
+            void lock() {
+                // critical_section_enter_blocking(&cs);        
+                mutex_enter_blocking(&mutex); 
+            }
+
+            void unlock() {
+                // critical_section_exit(&cs);
+                mutex_exit(&mutex);
+            }
 
         public:
             inline int get_dma_channel() const {
@@ -106,16 +118,17 @@ namespace pico {
             }
 
             inline auto available()  {
-                critical_section_enter_blocking(&cs);        
+                lock();
                 const auto result = fifo.available();
-                critical_section_exit(&cs);
+                unlock();
                 return result;
             }
 
             inline void put(const int16_t L, const int16_t R) {
-                critical_section_enter_blocking(&cs);    
+                // critical_section_enter_blocking(&cs);    
+                lock();
                 fifo.put(uint32_t(L) << 16 | uint32_t(R));        
-                critical_section_exit(&cs);        
+                unlock();
             }
 
             void irq_callback();

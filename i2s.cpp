@@ -1,5 +1,5 @@
-#include <functional>
 #include <stdio.h>
+#include <functional>
 #include <limits>
 
 #include "hardware/dma.h"
@@ -8,13 +8,19 @@
 #include "i2s.hpp"
 #include "i2s.pio.h"
 
+// #include "device/all.hpp"
+
 using namespace pico;
 
 std::vector<std::reference_wrapper<I2S>> I2S::instances;
 
-void I2S::irq_callback() {
+// namespace {
+//     auto& printer = device::printer;
+// }
+
+void __time_critical_func(I2S::irq_callback)() {
     ready_to_transfer = true;
-    dma_irqn_acknowledge_channel(irq_index - DMA_IRQ_0, dma_channel);   
+    dma_irqn_acknowledge_channel(irq_index - DMA_IRQ_0, dma_channel);       
     transfer_next_buffer();
 }
 
@@ -56,13 +62,14 @@ I2S::I2S(const int _pin_bclk, const int _pin_din, const int _pin_dout) : pin_bcl
 
 void I2S::setup() {
     fifo.clear();
+    mutex_init(&mutex);
     critical_section_init(&cs);
     pio_init();
     dma_init();
 }
 
-void I2S::begin() {
-    irq_callback();
+void I2S::begin() {    
+    irq_callback();    
 };
 
 void I2S::update() {
@@ -82,6 +89,13 @@ void I2S::pio_init() {
 
         if(sm < 0) assert(false);
     }
+
+    if(pio == pio0) {
+        printf("pio = 0\n");        
+    } else {
+        printf("pio = 1\n");
+    }
+    printf("sm: %d\n", sm);
 
     const auto func = pio == pio0 ? GPIO_FUNC_PIO0 : GPIO_FUNC_PIO1;
     gpio_set_function(pin_bclk, func);
@@ -116,6 +130,8 @@ void I2S::pio_init() {
     }
 
     const float div = (float)clock_get_hz(clk_sys) / (sample_rate * 2 * 32);    
+    printf("clc_sys: %lu\n", clock_get_hz(clk_sys));    
+    printf("div: %f\n", div);
     sm_config_set_clkdiv(&sm_config, div);
 
     pio_sm_init(pio, sm, offset, &sm_config);
@@ -149,6 +165,7 @@ void I2S::dma_init(const int _dma_channel) {
     } else {
         dma_channel = _dma_channel;
     }
+    printf("dma_channel: %d\n", dma_channel);
 
     auto c = dma_channel_get_default_config(dma_channel);
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
@@ -156,22 +173,25 @@ void I2S::dma_init(const int _dma_channel) {
 
     const auto dreq = pio_get_dreq(pio, sm, true);    
     channel_config_set_dreq(&c, dreq);
+    printf("dreq: %u\n", dreq);
     
     dma_channel_configure(
         dma_channel, 
         &c,
         &pio->txf[sm], 
         nullptr,    //read_buffer.data(), 
-        0,
+        Audio_Vector_Count,
         false
     );
 
     constexpr auto exclusive_handler_required = true;
     if (irq_get_exclusive_handler(DMA_IRQ_0) == nullptr) {
         irq_index = DMA_IRQ_0;
-        irq_set_exclusive_handler(irq_index, I2S::dma_irq0_handler);              
+        irq_set_exclusive_handler(irq_index, I2S::dma_irq0_handler);   
+        printf("exclusive handler set: DMA_IRQ_0\n");
     } else if (irq_get_exclusive_handler(DMA_IRQ_1) == nullptr) {
         irq_index = DMA_IRQ_1;
+        printf("exclusive handler set: DMA_IRQ_1\n"); 
         irq_set_exclusive_handler(irq_index, I2S::dma_irq1_handler);                
     } else {
         if(exclusive_handler_required) {
@@ -195,9 +215,9 @@ void I2S::dma_init(const int _dma_channel) {
     irq_set_enabled(irq_index, true);        
 }
 
-void I2S::transfer_next_buffer() {    
-    fifo.pop(); 
+void __time_critical_func(I2S::transfer_next_buffer)() {    
+    fifo.pop();     
     ready_to_transfer = false;
-    auto [next_buffer, buffer_size] = fifo.get_read_buffer(Audio_Vector_Count);
-    dma_channel_transfer_from_buffer_now(dma_channel, next_buffer, buffer_size);
+    auto [next_buffer, buffer_size] = fifo.get_read_buffer(Audio_Vector_Count);        
+    dma_channel_transfer_from_buffer_now(dma_channel, next_buffer, buffer_size);    
 }
